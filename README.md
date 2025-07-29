@@ -5,7 +5,22 @@ Samba image build on debian. GNS3 ready
 The ye3samba image automates the initial setup and configuration of a Samba server, which can function as a standalone server, a domain controller (DC), or a domain member.  
 It handles provisioning, domain joining, share configuration, and integrates with various services : rsyslog, ntpd, sshd, rsyncd and crond.
 
-# Simple usage
+* [Simple usage](#user-content-simple-usage)
+* [Advanced usage](#user-content-advanced-usage)
+* [Prerequisite](#user-content-prerequisite)
+* [Registry](#user-content-registry)
+* [GNS3](#user-content-gns3)
+* [Compatibility](#user-content-compatibility)
+* [Build](#user-content-build)
+* [SAMBA Links](#user-content-samba-links)
+* [Ports](#user-content-ports)
+* [Environment Variables](#user-content-environment-variables)
+* [Version](#user-content-version)
+* [Changelog](#user-content-changelog)
+* [ToDo](#user-content-todo)
+* [License](#user-content-license)
+
+## Simple usage
 
 Create a standalone samba server to share files
 
@@ -28,10 +43,10 @@ podman logs -f mynas
 podman exec -it mynas adduser caroline 
 podman exec -it mynas smbpasswd -a caroline
 ```
-# Advanced usage
+## Advanced usage
 
 To show the capabilities, we will create 1 network and 3 containers : 
-- a network :<br> named mynet46, subnet ipv4=10.1.192.0/24 ipv6=fd00::a01:c000/12 
+- a network :<br> named mynet46, subnet ipv4=10.1.192.0/24 ipv6=fd00::a01:c000/120 
 - an active directory domain controller :<br> fqdn=dc1.samba.lan ipv4=10.1.192.11 ipv6=fd00::a01:c00b
 - another domain controller :<br> fqdn=dc2.samba.lan ipv4=10.1.192.12 ipv6=fd00::a01:c00c
 - a member server with a share :<br> fqdn=nas1.samba.lan ipv4=10.1.192.13 ipv6=fd00::a01:c00d
@@ -86,6 +101,7 @@ ls -l /var/lib/samba/sysvol/samba.lan/Policies/PolicyDefinitions
 
 ```bash
 # add another domain controller
+# with unidirectional SysVol replication via cron and rsync
 
 podman run -dt --name="dc2" --cap-add="NET_RAW,SYS_TIME"  \
     --network="mynet46" --ip="10.1.192.12" --ip6="fd00::a01:c00c" \
@@ -157,9 +173,27 @@ podman exec -it nas1 bash -c "touch test.txt ; setfattr -n security.secName -v s
 
 # test gpo
 podman exec -it nas1 samba-tool gpo listall --username=administrator --password="My_Str0ng_Dc_Passw0rd"
+podman exec -it nas1 samba-tool gpo getlink "DC=samba,DC=lan" --username=administrator --password="My_Str0ng_Dc_Passw0rd"
 
-# smb.conf
+# test ldap query
+podman exec -it nas1 ldapsearch -x -H ldaps://dc1.samba.lan -o tls_reqcert=never -D "CN=Administrator,CN=Users,DC=samba,DC=lan" -w "My_Str0ng_Dc_Passw0rd" -b "DC=samba,DC=lan" "(&(objectCategory=person)(objectClass=user)(sAMAccountName=caroline))"
+
+# verify port
+podman exec -it nas1 netstat -tulnp
+```
+
+```bash
+# to modify the samba configuration
+podman exec -it nas1 nano /etc/samba/smb.conf
+
+# test
 podman exec -it nas1 testparm
+
+# reload to apply
+podman exec -it nas1 smbcontrol all reload-config
+
+# log
+podman exec -it nas1 tail -f /var/log/samba/log.smbd
 ```
 
 ```bash
@@ -172,29 +206,55 @@ podman exec -it nas1 testparm
 -p 137:137/udp -p 138:138/udp -p 139:139/tcp -p 445:445/tcp 
 ```
 
+```bash
+# test the DC from a Windows computer that is not part of the domain
 
-# Prerequisite
+# open cmd.exe in local administrator, type this line and hit Enter :
+notepad C:\Windows\System32\drivers\etc\hosts
 
-## Install Podman
+# append this line, and close the file :
+10.1.192.11    samba.lan
+
+# from the cmd, type this line and hit Enter, this will open "Active directory users and computer" :
+runas /netonly /user:samba.lan\Administrator "mmc.exe \"%SystemRoot%\system32\dsa.msc\" /domain=samba.lan"
+
+# RSAT is required
+```
+
+## Prerequisite
+
+Some knowledge of Linux, containerization, and Samba.
+
+### Install Podman
 ```bash
 # e.g. on Ubuntu 24.04.2 LTS, with crun and pasta
 sudo apt update; sudo apt install podman crun passt
 ```
 
-## Or install Docker
+### Or install Docker
 ```bash
 # e.g. on Ubuntu 24.04.2 LTS
-sudo apt update; sudo apt install docker.io;
+sudo apt update; sudo apt install docker.io
 
 # configuration
 sudo groupadd docker; sudo usermod -aG docker $USER; newgrp docker; sudo systemctl enable --now docker
 ```
 
-# GNS3
+## Registry
+
+| Registry | Image name |
+|---|---|
+| Docker | docker.io/palw3ey/ye3samba |
+| Github | ghcr.io/palw3ey/ye3samba |
+| Gitlab | registry.gitlab.com/palw3ey/ye3samba |
+| Redhat | quay.io/palw3ey/ye3samba |
+
+## GNS3
 
 To run through GNS3, download and import the appliance : [ye3samba.gns3a](https://gitlab.com/palw3ey/ye3samba/-/raw/main/ye3samba.gns3a)
 
-## How to connect the docker container in the GNS3 topology ?
+### How to connect the docker container in the GNS3 topology ?
+
  - Drag and drop the device in the topology.  
  - Right click on the device and select "Edit config".  
  - If you want a static configuration, uncomment the lines just below `# Static config for eth0` or otherwise `# DHCP config for eth0` for a dhcp configuration.  
@@ -205,7 +265,7 @@ To run through GNS3, download and import the appliance : [ye3samba.gns3a](https:
 To see the output, right click "Console".  
 To type commands, right click "Auxiliary console".  
 
-# Compatibility
+## Compatibility
 
 The public image was build to work on these CPU architectures :
 
@@ -217,7 +277,7 @@ The public image was build to work on these CPU architectures :
 - linux/ppc64le
 - linux/s390x
 
-# Build
+## Build
 
 To customize and create your own image.
 
@@ -235,13 +295,13 @@ podman exec -it mysamba-dev ps -ef
 podman exec -it mysamba-dev bash
 ```
 
-# SAMBA Links
+## SAMBA Links
 
 [Wiki = https://wiki.samba.org/ ](https://wiki.samba.org/)
 
 [Manual = https://www.samba.org/samba/docs/current/man-html/](https://www.samba.org/samba/docs/current/man-html/)
 
-# Ports
+## Ports
 
 These are the ports you may use and their descriptions, depending on the role and service you choose.
 
@@ -263,11 +323,11 @@ These are the ports you may use and their descriptions, depending on the role an
 | 3269 (TCP) | Global Catalog SSL (LDAPS) |
 | 49152-65535 (TCP) | Range for various RPC services |
 
-# Environment Variables
+## Environment Variables
 
 These are the environment variables and their descriptions.  
 
-| variables | default | description |
+| Variables | Default | Description |
 | :- |:- |:- |
 |TZ | Europe/Paris | {IANA format} time zone,  |
 |Y_LANGUAGE | fr_FR | {locale code} Language. The list is in the folder /i18n |
@@ -285,14 +345,14 @@ These are the environment variables and their descriptions.
 |Y_RSYNCD_USER | | value to set for "auth users = " in /etc/rsyncd.conf. value saved in /etc/rsyncd.secrets|
 |Y_RSYNCD_PASSWORD | | value saved in /etc/rsyncd.secrets|
 |Y_RSYNCD_SYSVOL_SERVER | | {IP Address/Hostname} IP of the server containing the sysvol to pull|
-|Y_RSYNCD_SYSVOL_CRON | | cron time expression used to pull the sysvol <br> e.g. */5 * * * *|
+|Y_RSYNCD_SYSVOL_CRON | | cron time expression used to pull the sysvol (unidirectional SysVol replication) <br> e.g. */5 * * * *|
 |Y_RSYNCD_SYSVOL_UPON_JOIN | | {yes/no} yes, to run a rsync command (pull sysvol and idmap) upon joining the domain|
 |Y_HOSTS_ENTRY | | entries to put in /etc/hosts <br> e.g. Y_HOSTS_ENTRY="127.0.0.1 localhost \| ::1 ip6-localhost ip6-loopback \| 10.1.192.11  dc1.samba.lan dc1"|
 |Y_RESOLV_OPTION | | options to put in /etc/resolv.conf <br> e.g. Y_RESOLV_OPTION="search samba.lan \| nameserver 10.1.192.11"|
 |Y_IDMAP_LOWERBOUND | | value to set for "lowerBound:" in /usr/share/samba/setup/idmap_init.ldif|
 |Y_IDMAP_LOWERBOUND | | value to set for "upperBound:" in /usr/share/samba/setup/idmap_init.ldif|
 |Y_NETBIOS_NAME | | value to set for "netbios name = " in /etc/samba/smb.conf|
-|Y_SERVER_ROLE | | value to set for "server role = " in /etc/samba/smb.conf|
+|Y_SERVER_ROLE | | value to set for "server role = " in /etc/samba/smb.conf <br> e.g. use 'dc', 'member' or 'standalone' |
 |Y_RFC2307 | | {yes/no} yes, to add a line in /etc/samba/smb.conf that enable rfc2307|
 |Y_DNS_BACKEND | | value to set for "server role = " in /etc/samba/smb.conf|
 |Y_LOG_LEVEL | | value to set for "server role = " in /etc/samba/smb.conf|
@@ -324,25 +384,25 @@ These are the environment variables and their descriptions.
 |Y_ULIMIT_SOFT | | value for soft ulimit |
 |Y_ULIMIT_HARD | | value for hard ulimit |
 
-# Version
+## Version
 
-| name | version |
+| Name | Version |
 | :- |:- |
 |ye3samba | 1.0.0 |
 |samba | 4.17.12-Debian |
 |debian | 12.11 |
 
-# Changelog
+## Changelog
 
-## [1.0.0] - 2025-07-28
-### Added
+### [1.0.0] - 2025-07-28
+#### Added
 - première : first release
 
-# ToDo
+## ToDo
 
 Feel free to contribute or share your ideas for new features, you can contact me on github, gitlab or by email. I speak French, you can write to me in other languages ​​I will find ways to translate.
 
-# License
+## License
 
 GPLv3  
 author: palw3ey  
