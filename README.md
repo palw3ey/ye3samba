@@ -299,6 +299,8 @@ To run through GNS3, download and import the appliance : [ye3samba.gns3a](https:
 
 To see the output, right click "Console".  
 To type commands, right click "Auxiliary console".  
+To stop the container, right click "Stop", if it don't stop then close the "Auxiliary console" and retry.  
+You should always close the "Auxiliary console" before closing GNS3 to avoid unexpected behaviors in the existing container.
 
 ## Compatibility
 
