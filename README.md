@@ -272,7 +272,10 @@ sudo apt update; sudo apt install podman crun passt
 sudo apt update; sudo apt install docker.io
 
 # configuration
-sudo groupadd docker; sudo usermod -aG docker $USER; newgrp docker; sudo systemctl enable --now docker
+sudo groupadd docker
+sudo usermod -aG docker $USER
+newgrp docker
+sudo systemctl enable --now docker
 ```
 
 ## Registry
