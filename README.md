@@ -51,16 +51,13 @@ To show the capabilities, we will create 1 network and 3 containers :
 - another domain controller :<br> fqdn=dc2.samba.lan ipv4=10.1.192.12 ipv6=fd00::a01:c00c
 - a member server with a share :<br> fqdn=nas1.samba.lan ipv4=10.1.192.13 ipv6=fd00::a01:c00d
 
-
+### Network
 ```bash
-# network
-
 podman network create --ipv6 --subnet=10.1.192.0/24 --subnet=fd00::a01:c000/120 mynet46
 ```
 
+### Active directory domain controller
 ```bash
-# active directory domain controller
-
 podman run -dt --name="dc1" --cap-add="NET_RAW,SYS_TIME"  \
     --network="mynet46" --ip="10.1.192.11" --ip6="fd00::a01:c00b" \
     -e Y_RESOLV_OPTION="search samba.lan | nameserver 10.1.192.11" \
@@ -78,13 +75,13 @@ podman run -dt --name="dc1" --cap-add="NET_RAW,SYS_TIME"  \
 podman logs -f dc1
 ```
 
+### Add a user
 ```bash
-# add a user
 podman exec -it dc1 samba-tool user add caroline My_Str0ng_User_Passw0rd
 ```
 
+### GPO : Install admx
 ```bash
-# GPO : Install admx
 podman exec -it dc1 bash
 
 wget "https://download.microsoft.com/download/9/5/b/95be347e-c49e-4ede-a205-467c85eb1674/Administrative%20Templates%20(.admx)%20for%20Windows%2011%20Sep%202024%20Update.msi"
@@ -99,8 +96,8 @@ samba-tool gpo admxload --username=administrator --password="My_Str0ng_Dc_Passw0
 ls -l /var/lib/samba/sysvol/samba.lan/Policies/PolicyDefinitions
 ```
 
+### Add another domain controller
 ```bash
-# add another domain controller
 # with unidirectional SysVol replication via cron and rsync
 
 podman run -dt --name="dc2" --cap-add="NET_RAW,SYS_TIME"  \
@@ -121,15 +118,13 @@ podman run -dt --name="dc2" --cap-add="NET_RAW,SYS_TIME"  \
 podman logs -f dc2
 ```
 
+### Show DRS replication status
 ```bash
-# show DRS replication status
-
 podman exec -it dc2 samba-tool drs showrepl -U administrator --password=My_Str0ng_Dc_Passw0rd
 ```
 
+### Add a member server with a share
 ```bash
-# add a member server with a share
-
 podman run -dt --name="nas1" --cap-add="NET_RAW"  \
     --network="mynet46" --ip="10.1.192.13" --ip6="fd00::a01:c00d" \
     -e Y_RESOLV_OPTION="search samba.lan | nameserver 10.1.192.11" \
@@ -147,15 +142,13 @@ podman run -dt --name="nas1" --cap-add="NET_RAW"  \
 podman logs -f nas1
 ```
 
+### Get the ACL of /nas folder
 ```bash
-# get the ACL of /nas folder
-
 podman exec -it nas1 getfacl /nas
 ```
 
+### Run tests
 ```bash
-# run test
-
 podman exec -it nas1 wbinfo --ping-dc
 
 # show dns zone
@@ -193,12 +186,16 @@ podman exec -it nas1 samba-tool gpo getlink "DC=samba,DC=lan" --username=adminis
 # test ldap query
 podman exec -it nas1 ldapsearch -x -H ldaps://dc1.samba.lan -o tls_reqcert=never -D "CN=Administrator,CN=Users,DC=samba,DC=lan" -w "My_Str0ng_Dc_Passw0rd" -b "DC=samba,DC=lan" "(&(objectCategory=person)(objectClass=user)(sAMAccountName=caroline))"
 
+# show SDDL ACL
+podman exec -it nas1 mkdir /nas/newdir
+podman exec -it nas1 samba-tool ntacl get --as-sddl /nas/newdir
+
 # verify port
 podman exec -it nas1 netstat -tulnp
 ```
 
+### Modify the samba configuration
 ```bash
-# to modify the samba configuration
 podman exec -it nas1 nano /etc/samba/smb.conf
 
 # test
@@ -211,19 +208,17 @@ podman exec -it nas1 smbcontrol all reload-config
 podman exec -it nas1 tail -f /var/log/samba/log.smbd
 ```
 
+### Port mapping to use
 ```bash
-# include this port mapping in the podman run command, if you want to test :
+# for a DC server : 
+-p 53:53/tcp -p 53:53/udp -p 88:88/tcp -p 88:88/udp -p 135:135/tcp -p 137:137/udp -p 138:138/udp -p 139:139/tcp -p 389:389/tcp -p 389:389/udp -p 445:445/tcp -p 464:464/tcp -p 464:464/udp -p 636:636/tcp -p 3268:3268/tcp -p 3269:3269/tcp -p 49152-65535:49152-65535/tcp -p 123:123/udp 
 
-# the DC server from outside, for RSAT : 
--p 53:53/tcp -p 53:53/udp -p 88:88/tcp -p 88:88/udp -p 135:135/tcp -p 389:389/tcp -p 389:389/udp -p 464:464/tcp -p 464:464/udp -p 636:636/tcp -p 3268:3268/tcp -p 3269:3269/tcp -p 49152-65535:49152-65535/tcp -p 123:123/udp 
-
-# the share server from outside, for SMB : 
+# for a share server : 
 -p 137:137/udp -p 138:138/udp -p 139:139/tcp -p 445:445/tcp 
 ```
 
+### Test DC from a Windows computer that is not part of the domain
 ```bash
-# test the DC from a Windows computer that is not part of the domain
-
 # open cmd.exe in local administrator, type this line and hit Enter :
 notepad C:\Windows\System32\drivers\etc\hosts
 
@@ -236,9 +231,8 @@ runas /netonly /user:samba.lan\Administrator "mmc.exe \"%SystemRoot%\system32\ds
 # RSAT is required
 ```
 
+### Other Windows tips
 ```bash
-# Other Windows tips :
-
 # connect to share with letter S
 net use S: \\samba.lan\nas My_Str0ng_User_Passw0rd /user:samba\caroline
 
