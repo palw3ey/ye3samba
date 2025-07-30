@@ -184,7 +184,12 @@ podman exec -it nas1 samba-tool gpo listall --username=administrator --password=
 podman exec -it nas1 samba-tool gpo getlink "DC=samba,DC=lan" --username=administrator --password="My_Str0ng_Dc_Passw0rd"
 
 # test ldap query
-podman exec -it nas1 ldapsearch -x -H ldaps://dc1.samba.lan -o tls_reqcert=never -D "CN=Administrator,CN=Users,DC=samba,DC=lan" -w "My_Str0ng_Dc_Passw0rd" -b "DC=samba,DC=lan" "(&(objectCategory=person)(objectClass=user)(sAMAccountName=caroline))"
+podman exec -it nas1 ldapsearch \
+	-x -H ldaps://dc1.samba.lan -o tls_reqcert=never \
+	-D "CN=Administrator,CN=Users,DC=samba,DC=lan" \
+	-w "My_Str0ng_Dc_Passw0rd" \
+	-b "DC=samba,DC=lan" \
+	"(&(objectCategory=person)(objectClass=user)(sAMAccountName=caroline))"
 
 # show SDDL ACL
 podman exec -it nas1 mkdir /nas/newdir
