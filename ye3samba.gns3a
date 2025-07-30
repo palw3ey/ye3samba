@@ -9,7 +9,7 @@
     "status": "stable",
     "maintainer": "palw3ey",
     "maintainer_email": "palw3ey@gmail.com",
-    "usage": "Useful env :\nY_SHARE_NAME=\"nas\"\nY_SHARE_PATH=\"/nas\"\nY_SHARE_CHMOD=\"777\"\nY_SHARE_OPTION=\"writable = yes | read only = no | hide dot files = no | vfs objects = recycle\" \n\nDocumentation : https://gitlab.com/palw3ey/ye3samba",
+    "usage": "Useful env :\nY_SHARE_NAME=nas\nY_SHARE_PATH=/nas\nY_SHARE_CHMOD=777\nY_SHARE_OPTION=writable = yes | read only = no | hide dot files = no | vfs objects = recycle\n\nDocumentation : https://gitlab.com/palw3ey/ye3samba",
     "symbol": "linux_guest.svg",
     "docker": {
         "adapters": 1,
