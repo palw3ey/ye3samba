@@ -28,7 +28,7 @@ Create a standalone samba server to share files
 # create the nas folder on your host
 mkdir ~/nas
 
-# create and run
+# create and start
 podman run -dt --name="mynas" \
     -v ~/nas:/nas \
     -p 137:137/udp -p 138:138/udp -p 139:139/tcp -p 445:445/tcp \
@@ -80,7 +80,7 @@ podman logs -f dc1
 
 ```bash
 # add a user
-podman exec -it dc1 samba-tool user add caroline 'Str0ng_User_Passw0rd'
+podman exec -it dc1 samba-tool user add caroline My_Str0ng_User_Passw0rd
 ```
 
 ```bash
@@ -122,6 +122,12 @@ podman logs -f dc2
 ```
 
 ```bash
+# show DRS replication status
+
+podman exec -it dc2 samba-tool drs showrepl -U administrator --password=My_Str0ng_Dc_Passw0rd
+```
+
+```bash
 # add a member server with a share
 
 podman run -dt --name="nas1" --cap-add="NET_RAW"  \
@@ -142,9 +148,18 @@ podman logs -f nas1
 ```
 
 ```bash
+# get the ACL of /nas folder
+
+podman exec -it nas1 getfacl /nas
+```
+
+```bash
 # run test
 
 podman exec -it nas1 wbinfo --ping-dc
+
+# show dns zone
+podman exec -it nas1 samba-tool dns zonelist dc1 --username=administrator --password=My_Str0ng_Dc_Passw0rd
 
 # test dns resolve : ldap, kerberos, internal, external
 podman exec -it nas1 host -t SRV _ldap._tcp.samba.lan.
@@ -219,6 +234,27 @@ notepad C:\Windows\System32\drivers\etc\hosts
 runas /netonly /user:samba.lan\Administrator "mmc.exe \"%SystemRoot%\system32\dsa.msc\" /domain=samba.lan"
 
 # RSAT is required
+```
+
+```bash
+# Other Windows tips :
+
+# connect to share with letter S
+net use S: \\samba.lan\nas My_Str0ng_User_Passw0rd /user:samba\caroline
+
+# list connections
+net use
+
+# show SDDL ACL
+icacls \\samba.lan\nas
+powershell -c "(Get-Acl '\\samba.lan\nas').Sddl"
+
+# remove connections
+net use \\samba\nas /delete
+
+# remove saved password 
+rundll32.exe keymgr.dll, KRShowKeyMgr
+control.exe /name Microsoft.CredentialManager
 ```
 
 ## Prerequisite
