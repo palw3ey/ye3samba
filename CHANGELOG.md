@@ -6,7 +6,7 @@ debian [13.0] samba [4.22.3-Debian] rsyslog [8.2504.0] chrony [4.6.1] ssh [10.0p
 ### Added
 - new package : samba-ad-dc chrony ntpsec-ntpdate vim
 - new environment variables : Y_RSYSLOGD_AS_SERVER, Y_RSYSLOGD_SERVER, Y_CHRONYD, Y_CHRONYD_ADJTIMEX, Y_CHRONYD_OPTION
-- rsync configuration is added : able to work as server, or send log to remote server
+- rsyslog configuration is added : able to work as server, or send log to remote server
 - ntp configuration is added : able to work with samba
 
 ### Removed
