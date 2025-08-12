@@ -1,9 +1,9 @@
 FROM debian:stable-slim
 
 ARG Y_TITLE="ye3samba"
-ARG Y_VERSION="1.0.0"
-ARG Y_CREATED="2025-07-08T15:00:00-03:00"
-ARG Y_REVISION="20250708"
+ARG Y_VERSION="2.0.0"
+ARG Y_CREATED="2025-08-12T15:00:00-03:00"
+ARG Y_REVISION="20250812"
 ARG Y_EXTRA=""
 
 LABEL org.opencontainers.image.title=$Y_TITLE \
@@ -25,11 +25,11 @@ LABEL org.opencontainers.image.title=$Y_TITLE \
       org.opencontainers.image.premiere="20250708"
 
 RUN apt update && DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
-    tini tzdata rsyslog ntp ntpdate openssh-server \
-    samba samba-ad-provision samba-common-bin samba-dsdb-modules samba-vfs-modules smbclient python3-cryptography python3-setproctitle \
+    tini tzdata rsyslog chrony ntpsec-ntpdate openssh-server \
+    samba samba-ad-dc samba-ad-provision samba-common-bin samba-dsdb-modules samba-vfs-modules smbclient python3-cryptography python3-setproctitle \
     krb5-user krb5-config libpam-krb5 \
     winbind libpam-winbind libnss-winbind \
-    cron rsync ssmtp openssl ca-certificates nano procps dnsutils tdb-tools ldb-tools ldap-utils attr acl msitools \
+    cron rsync ssmtp openssl ca-certificates nano vim procps dnsutils tdb-tools ldb-tools ldap-utils attr acl msitools \
     wget curl iputils-ping iproute2 net-tools traceroute tcpdump
 
     # --- Conditional packages --- 
@@ -56,8 +56,10 @@ ENV TZ="Europe/Paris" \
     Y_RSYSLOGD="yes" \
     Y_CROND="yes" \
     Y_RSYNCD="no" \
-    Y_NTPD="no" \
+    Y_CHRONYD="no" \
     Y_SSHD="no" \
+    Y_RSYSLOGD_AS_SERVER= \
+    Y_RSYSLOGD_SERVER= \
     Y_SSMTP_ROOT= \
     Y_SSMTP_MAILHUB= \
     Y_SSMTP_HOSTNAME= \
@@ -67,6 +69,8 @@ ENV TZ="Europe/Paris" \
     Y_RSYNCD_SYSVOL_SERVER= \
     Y_RSYNCD_SYSVOL_CRON= \
     Y_RSYNCD_SYSVOL_UPON_JOIN= \
+    Y_CHRONYD_ADJTIMEX="no" \
+    Y_CHRONYD_OPTION= \
     Y_HOSTS_ENTRY= \
     Y_RESOLV_OPTION= \
     Y_IDMAP_LOWERBOUND= \
@@ -124,9 +128,12 @@ ENV TZ="Europe/Paris" \
 #   - 49152-65535 (TCP): Range for various RPC services.
 #
 # Optional:
+#   - 22 (TCP): SSH
 #   - 123 (UDP): NTP (Network Time Protocol - important for Kerberos time sync)
+#   - 323 (UDP): NTP monitoring command for chronyc
+#   - 514 (TCP/UDP): Rsyslog
 #   - 873 (TCP): RSYNC
-# EXPOSE 53/tcp 53/udp 88/tcp 88/udp 135/tcp 137/udp 138/udp 139/tcp 389/tcp 389/udp 445/tcp 464/tcp 464/udp 636/tcp 3268/tcp 3269/tcp 49152-65535/tcp 123/udp 873/tcp
+# EXPOSE 53/tcp 53/udp 88/tcp 88/udp 135/tcp 137/udp 138/udp 139/tcp 389/tcp 389/udp 445/tcp 464/tcp 464/udp 636/tcp 3268/tcp 3269/tcp 49152-65535/tcp 22/tcp 123/udp 323/udp 514/tcp 514/udp 873/tcp
 
 ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["/entrypoint.sh"]

@@ -7,8 +7,8 @@
 #
 # License: GPLv3 (https://www.gnu.org/licenses/gpl-3.0.en.html)
 # Author: palw3ey@gmail.com
-# Date: 2025-07-28
-# Version: 1.0.0
+# Date: 2025-08-12
+# Version: 2.0.0
 #
 
 
@@ -27,14 +27,16 @@ v_krb_conf_etc="/etc/krb5.conf"
 v_pam_session="/etc/pam.d/common-session"
 v_pam_common="/etc/pam.d/common-"
 v_pam_samba="/etc/pam.d/samba"
+v_rsyslogd_conf="/etc/rsyslog.conf"
+v_rsyslogd_remote_conf="/etc/rsyslog.d/00-remote.conf"
 v_ssmtp_conf="/etc/ssmtp/ssmtp.conf"
+v_chronyd_conf="/etc/chrony/chrony.conf"
+v_chronyd_signdsocket="/var/lib/samba/ntp_signd/"
 v_rsyncd_conf="/etc/rsyncd.conf"
 v_rsyncd_secrets="/etc/rsyncd.secrets"
 v_rsyncd_sysvol_secret="/etc/rsync-sysvol.secret"
 v_rsync_idmap_output="/var/log/rsync_idmap_output.log"
 v_rsync_sysvol_output="/var/log/rsync_sysvol_output.log"
-v_log_auth="/var/log/auth.log"
-v_log_mail="/var/log/mail.log"
 v_crond_root_cache="/root/.cache"
 v_resolv_conf="/etc/resolv.conf"
 v_hosts_conf="/etc/hosts"
@@ -54,8 +56,8 @@ v_tdbbackup_bin="/usr/bin/tdbbackup"
 v_pam_auth_update_bin="/usr/sbin/pam-auth-update"
 v_rsyslogd_bin="/usr/sbin/rsyslogd"
 v_rsyslogd_pid="/var/run/rsyslogd.pid"
-v_ntpd_bin="/usr/sbin/ntpd"
-v_ntpd_pid="/var/run/ntpd.pid"
+v_chronyd_bin="/usr/sbin/chronyd"
+v_chronyd_pid="/run/chrony/chronyd.pid"
 v_crond_bin="/usr/sbin/cron"
 v_crond_pid="/var/run/crond.pid"
 v_sshd_bin="/usr/sbin/sshd"
@@ -203,7 +205,7 @@ echo [$(date "+%Y-%m-%dT%H:%M:%S%z")]
 
 # load default language
 if [ -f "$v_i18n/$v_default_language.sh" ]; then
-	source $v_i18n/$v_default_language.sh
+    source $v_i18n/$v_default_language.sh
 fi
 
 # override with choosen language
@@ -305,7 +307,7 @@ EOF
         [ "$Y_RFC2307" = "yes" ] && echo -e "        idmap config * : schema_mode = rfc2307 " >> "$v_smb_conf"
 
         f_append_config "$Y_GENERAL_OPTION" "$v_smb_conf" "        "
-		
+
         f_message "$i_disable_auth_module : krb5" 
 
         DEBIAN_FRONTEND=noninteractive "$v_pam_auth_update_bin" --remove krb5 --force
@@ -337,7 +339,7 @@ IFS='
         IFS=$OLDIFS
 
         # run samba-tool with the arguments
-        samba-tool domain "$@"
+        "$v_samba_tool_bin" domain "$@"
 
         # setup krb
         _base_domain="${Y_PROVISION_REALM:-$Y_JOIN_DOMAIN}"
@@ -464,12 +466,51 @@ EOF
         sed -i "/^hostname/c hostname=$Y_SSMTP_HOSTNAME" "$v_ssmtp_conf"
     fi
 
+    # configure rsyslogd
+
+    if [ "$Y_RSYSLOGD" = "yes" ]; then
+
+        f_message "$i_configuring : rsyslogd"
+
+        sed -i 's/$FileGroup adm/$FileGroup root/' "$v_rsyslogd_conf"
+
+        if [ "$Y_RSYSLOGD_AS_SERVER" = "yes" ]; then
+
+            sed -i '/module(load="im\(tcp\|udp\)")/s/^#//; /input(type="im\(tcp\|udp"\)/s/^#//' "$v_rsyslogd_conf"
+
+            echo -e '$template RemoteLogs,"/var/log/%HOSTNAME%/%PROGRAMNAME%.log"\nif $fromhost-ip != '\''127.0.0.1'\'' then ?RemoteLogs\n& ~' > "$v_rsyslogd_remote_conf"
+
+        fi
+
+        if [ -n "$Y_RSYSLOGD_SERVER" ]; then
+
+            echo "*.* @@$Y_RSYSLOGD_SERVER:514" > "$v_rsyslogd_remote_conf"
+
+        fi
+
+    fi
+
+    # configure chronyd
+    if [ "$Y_CHRONYD" = "yes" ] && [ "$v_is_domain_controller" = "yes" ]; then
+
+        f_message "$i_configuring : chronyd"
+
+        [ ! -d "$v_chronyd_signdsocket" ] && mkdir "$v_chronyd_signdsocket"
+
+        chown root:_chrony "$v_chronyd_signdsocket"
+        chmod 750 "$v_chronyd_signdsocket"
+
+        [ -n "$Y_CHRONYD_OPTION" ] && f_append_config "$Y_CHRONYD_OPTION" "$v_chronyd_conf"
+        echo "ntpsigndsocket $v_chronyd_signdsocket" >> "$v_chronyd_conf"
+
+    fi
+
     # configure rsyncd
     if [ "$Y_RSYNCD" = "yes" ]; then
 
         f_message "$i_configuring : rsyncd"
 
-        if [ -n "$Y_RSYNCD_USER" ] && [ -n "$Y_RSYNCD_PASSWORD" ] ; then
+        if [ -n "$Y_RSYNCD_USER" ] && [ -n "$Y_RSYNCD_PASSWORD" ]; then
             echo "$Y_RSYNCD_USER:$Y_RSYNCD_PASSWORD" > "$v_rsyncd_secrets"
             chmod 600 "$v_rsyncd_secrets"
             _rsync_secrets_file="secrets file = $v_rsyncd_secrets"
@@ -549,7 +590,7 @@ EOF
             tail -n 2 "$v_rsync_sysvol_output"
 
             f_message "$i_running : samba-tool ntacl sysvolreset"
-            samba-tool ntacl sysvolreset || true
+            "$v_samba_tool_bin" ntacl sysvolreset || true
 
         fi
 
@@ -605,19 +646,24 @@ if [ "$Y_RSYSLOGD" = "yes" ]; then
 
     f_message "$i_starting : rsyslogd"
 
-    touch "$v_log_auth" "$v_log_mail" || true
-    chown root:adm "$v_log_auth" "$v_log_mail" || true
-    chmod 640 "$v_log_auth" "$v_log_mail" || true
-
     [ -f "$v_rsyslogd_pid" ] && rm -f "$v_rsyslogd_pid"
     "$v_rsyslogd_bin" > /dev/null 2>&1 &
 fi
 
-# run ntpd
-if [ "$Y_NTPD" = "yes" ]; then
-    f_message "$i_starting : ntpd"
-    [ -f "$v_ntpd_pid" ] && rm -f "$v_ntpd_pid"
-    "$v_ntpd_bin" -p "$v_ntpd_pid" > /dev/null 2>&1 &
+# run chronyd
+if [ "$Y_CHRONYD" = "yes" ]; then
+
+    f_message "$i_starting : chronyd"
+
+    [ -f "$v_chronyd_pid" ] && rm -f "$v_chronyd_pid"
+
+    if [ "$Y_CHRONYD_ADJTIMEX" = "yes" ]; then
+        _chronyd_adjtimex=""
+    else
+        _chronyd_adjtimex="-x"
+    fi
+
+    "$v_chronyd_bin" "$_chronyd_adjtimex" > /dev/null 2>&1 &
 fi
 
 # run sshd
@@ -727,7 +773,7 @@ if  [ "$v_first_run" = "yes" ]; then
         fi
 
         # add ptr record
-        if  [ -n "$Y_REVERSE_PTR_NAME" ] && [ -n "$Y_REVERSE_PTR_DATA" ] ; then
+        if  [ -n "$Y_REVERSE_PTR_NAME" ] && [ -n "$Y_REVERSE_PTR_DATA" ]; then
 
             f_message "$i_adding_record : PTR"
 
@@ -770,7 +816,7 @@ if  [ "$v_first_run" = "yes" ]; then
     fi
 
     # backup idmap
-    if [ "$v_is_domain_controller" = "yes" ] ; then
+    if [ "$v_is_domain_controller" = "yes" ]; then
 
         f_message "$i_backup : idmap.ldb"
 

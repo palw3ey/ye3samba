@@ -3,7 +3,7 @@
 Samba image build on debian. GNS3 ready
 
 The ye3samba image automates the initial setup and configuration of a Samba server, which can function as a standalone server, a domain controller (DC), or a domain member.  
-It handles provisioning, domain joining, share configuration, and integrates with various services : rsyslog, ntpd, sshd, rsyncd and crond.
+It handles provisioning, domain joining, share configuration, and integrates with various services : rsyslog, chronyd, sshd, rsyncd and crond.
 
 * [Simple usage](#user-content-simple-usage)
 * [Advanced usage](#user-content-advanced-usage)
@@ -12,7 +12,7 @@ It handles provisioning, domain joining, share configuration, and integrates wit
 * [GNS3](#user-content-gns3)
 * [Compatibility](#user-content-compatibility)
 * [Build](#user-content-build)
-* [SAMBA Links](#user-content-samba-links)
+* [Documentation](#user-content-documentation)
 * [Ports](#user-content-ports)
 * [Environment Variables](#user-content-environment-variables)
 * [Version](#user-content-version)
@@ -58,8 +58,8 @@ podman network create --ipv6 --subnet=10.1.192.0/24 --subnet=fd00::a01:c000/120 
 
 ### Active directory domain controller
 ```bash
-podman run -dt --name="dc1" --cap-add="NET_RAW,SYS_TIME"  \
-    --network="mynet46" --ip="10.1.192.11" --ip6="fd00::a01:c00b" \
+podman run -dt --name="dc1" --cap-add="NET_RAW,SYS_TIME,SYS_NICE"  \
+    --hostname="dc1" --network="mynet46" --ip="10.1.192.11" --ip6="fd00::a01:c00b" \
     -e Y_RESOLV_OPTION="search samba.lan | nameserver 10.1.192.11" \
     -e Y_HOSTS_ENTRY="127.0.0.1 localhost | 10.1.192.11  dc1.samba.lan dc1" \
     -e Y_SERVER_ROLE="dc" -e Y_PROVISION_REALM="samba.lan" -e Y_PROVISION_DOMAIN="samba" -e Y_PROVISION_ADMINPASS="My_Str0ng_Dc_Passw0rd" \
@@ -69,7 +69,8 @@ podman run -dt --name="dc1" --cap-add="NET_RAW,SYS_TIME"  \
     -e Y_GENERAL_OPTION="dns forwarder = 1.1.1.1 | vfs objects = dfs_samba4 acl_xattr xattr_tdb | apply group policies = yes" \
     -e Y_REVERSE_ZONE="192.1.10.in-addr.arpa" -e Y_REVERSE_ZONE_CREATE="yes" -e Y_REVERSE_SERVER="dc1.samba.lan" \
     -e Y_REVERSE_PTR_NAME="11" -e Y_REVERSE_PTR_DATA="dc1.samba.lan" \
-    -e Y_NTPD="yes" -e Y_RSYNCD="yes" -e Y_RSYNCD_USER="samba-replication" -e Y_RSYNCD_PASSWORD="My_Str0ng_Rsync_Passw0rd" \
+    -e Y_CHRONYD="yes" -e Y_CHRONYD_OPTION="bindcmdaddress 10.1.192.11 | allow 10.1.192.0/24 | server 0.pool.ntp.org iburst" \
+    -e Y_RSYNCD="yes" -e Y_RSYNCD_USER="samba-replication" -e Y_RSYNCD_PASSWORD="My_Str0ng_Rsync_Passw0rd" \
     registry.gitlab.com/palw3ey/ye3samba
 
 podman logs -f dc1
@@ -100,8 +101,8 @@ ls -l /var/lib/samba/sysvol/samba.lan/Policies/PolicyDefinitions
 ```bash
 # with unidirectional SysVol replication via cron and rsync
 
-podman run -dt --name="dc2" --cap-add="NET_RAW,SYS_TIME"  \
-    --network="mynet46" --ip="10.1.192.12" --ip6="fd00::a01:c00c" \
+podman run -dt --name="dc2" --cap-add="NET_RAW,SYS_TIME,SYS_NICE"  \
+    --hostname="dc2" --network="mynet46" --ip="10.1.192.12" --ip6="fd00::a01:c00c" \
     -e Y_RESOLV_OPTION="search samba.lan | nameserver 10.1.192.12" \
     -e Y_HOSTS_ENTRY="127.0.0.1 localhost | 10.1.192.12  dc2.samba.lan dc2" \
     -e Y_SERVER_ROLE="dc" -e Y_JOIN_DOMAIN="samba.lan" -e Y_JOIN_SERVER="10.1.192.11" -e Y_JOIN_USER="Administrator" -e Y_JOIN_PASSWORD="My_Str0ng_Dc_Passw0rd" \
@@ -111,7 +112,8 @@ podman run -dt --name="dc2" --cap-add="NET_RAW,SYS_TIME"  \
     -e Y_GENERAL_OPTION="dns forwarder = 1.1.1.1 | vfs objects = dfs_samba4 acl_xattr xattr_tdb | apply group policies = yes" \
     -e Y_REVERSE_ZONE="192.1.10.in-addr.arpa" -e Y_REVERSE_SERVER="dc1.samba.lan" \
     -e Y_REVERSE_PTR_NAME="12" -e Y_REVERSE_PTR_DATA="dc2.samba.lan" \
-    -e Y_NTPD="yes" -e Y_RSYNCD="yes" -e Y_RSYNCD_USER="samba-replication" -e Y_RSYNCD_PASSWORD="My_Str0ng_Rsync_Passw0rd" \
+    -e Y_CHRONYD="yes" -e Y_CHRONYD_OPTION="bindcmdaddress 10.1.192.12 | allow 10.1.192.0/24 | server 0.pool.ntp.org iburst" \
+    -e Y_RSYNCD="yes" -e Y_RSYNCD_USER="samba-replication" -e Y_RSYNCD_PASSWORD="My_Str0ng_Rsync_Passw0rd" \
     -e Y_RSYNCD_SYSVOL_UPON_JOIN="yes" -e Y_RSYNCD_SYSVOL_SERVER="10.1.192.11" -e Y_RSYNCD_SYSVOL_CRON="*/5 * * * *" \
     registry.gitlab.com/palw3ey/ye3samba
 
@@ -126,7 +128,7 @@ podman exec -it dc2 samba-tool drs showrepl -U administrator --password=My_Str0n
 ### Add a member server with a share
 ```bash
 podman run -dt --name="nas1" --cap-add="NET_RAW"  \
-    --network="mynet46" --ip="10.1.192.13" --ip6="fd00::a01:c00d" \
+    --hostname="nas1" --network="mynet46" --ip="10.1.192.13" --ip6="fd00::a01:c00d" \
     -e Y_RESOLV_OPTION="search samba.lan | nameserver 10.1.192.11" \
     -e Y_HOSTS_ENTRY="127.0.0.1 localhost | 10.1.192.13  nas1.samba.lan nas1" \
     -e Y_SERVER_ROLE="member" -e Y_JOIN_DOMAIN="samba.lan" -e Y_JOIN_SERVER="10.1.192.11" -e Y_JOIN_USER="Administrator@SAMBA.LAN" -e Y_JOIN_PASSWORD="My_Str0ng_Dc_Passw0rd" \
@@ -185,11 +187,11 @@ podman exec -it nas1 samba-tool gpo getlink "DC=samba,DC=lan" --username=adminis
 
 # test ldap query
 podman exec -it nas1 ldapsearch \
-	-x -H ldaps://dc1.samba.lan -o tls_reqcert=never \
-	-D "CN=Administrator,CN=Users,DC=samba,DC=lan" \
-	-w "My_Str0ng_Dc_Passw0rd" \
-	-b "DC=samba,DC=lan" \
-	"(&(objectCategory=person)(objectClass=user)(sAMAccountName=caroline))"
+    -x -H ldaps://dc1.samba.lan -o tls_reqcert=never \
+    -D "CN=Administrator,CN=Users,DC=samba,DC=lan" \
+    -w "My_Str0ng_Dc_Passw0rd" \
+    -b "DC=samba,DC=lan" \
+    "(&(objectCategory=person)(objectClass=user)(sAMAccountName=caroline))"
 
 # show SDDL ACL
 podman exec -it nas1 mkdir /nas/newdir
@@ -335,11 +337,25 @@ podman exec -it mysamba-dev ps -ef
 podman exec -it mysamba-dev bash
 ```
 
-## SAMBA Links
+## Documentation
 
-[Wiki = https://wiki.samba.org/ ](https://wiki.samba.org/)
+samba wiki = [https://wiki.samba.org/](https://wiki.samba.org/)
 
-[Manual = https://www.samba.org/samba/docs/current/man-html/](https://www.samba.org/samba/docs/current/man-html/)
+samba manual = [https://www.samba.org/samba/docs/current/man-html/](https://www.samba.org/samba/docs/current/man-html/)
+
+rsyslog = [https://man7.org/linux/man-pages/man8/rsyslogd.8.html](https://man7.org/linux/man-pages/man8/rsyslogd.8.html)
+
+chrony = [https://chrony-project.org/documentation.html](https://chrony-project.org/documentation.html)
+
+ssh = [https://www.openssh.com/manual.html](https://www.openssh.com/manual.html)
+
+rsync = [https://rsync.samba.org/documentation.html](https://rsync.samba.org/documentation.html)
+
+cron = [https://man7.org/linux/man-pages/man8/crond.8.html](https://man7.org/linux/man-pages/man8/crond.8.html)
+
+podman = [https://docs.podman.io/en/latest/](https://docs.podman.io/en/latest/)
+
+docker = [https://docs.docker.com/](https://docs.docker.com/)
 
 ## Ports
 
@@ -347,6 +363,7 @@ These are the ports you may use and their descriptions, depending on the role an
 
 | Port(s) | Description |
 |---|---|
+| 22 (TCP) | SSH |
 | 53 (TCP/UDP) | DNS (Name resolution) |
 | 88 (TCP/UDP) | Kerberos (For authentication) |
 | 123 (UDP) | NTP (Network Time Protocol - important for Kerberos time sync) |
@@ -354,9 +371,11 @@ These are the ports you may use and their descriptions, depending on the role an
 | 137 (UDP) | NetBIOS Name Service |
 | 138 (UDP) | NetBIOS Datagram Service |
 | 139 (TCP) | NetBIOS Session Service (SMB over NetBIOS) |
+| 323 (UDP) | NTP monitoring command for chronyc |
 | 389 (TCP/UDP) | LDAP (Directory services) |
 | 445 (TCP) | SMB over TCP (CIFS) |
 | 464 (TCP/UDP) | Kerberos kpasswd (Password changes) |
+| 514 (TCP/UDP) | Rsyslog |
 | 636 (TCP) | LDAPS (Secure LDAP) |
 | 873 (TCP) | RSYNC |
 | 3268 (TCP) | Global Catalog (LDAP) |
@@ -376,8 +395,10 @@ These are the environment variables and their descriptions.
 |Y_RSYSLOGD | yes | {yes/no} yes, to start rsyslogd service |
 |Y_CROND | yes | {yes/no} yes, to start crond service |
 |Y_RSYNCD | no | {yes/no} yes, to start rsyncd service |
-|Y_NTPD | no | {yes/no} yes, to start ntpd service |
+|Y_CHRONYD | no | {yes/no} yes, to start chronyd service |
 |Y_SSHD | no | {yes/no} yes, to start sshd service |
+|Y_RSYSLOGD_AS_SERVER | no | {yes/no} yes, to act as rsync server |
+|Y_RSYSLOGD_SERVER | | {IP Address/Hostname} for client, IP of the rsync server to send log to |
 |Y_SSMTP_ROOT | | value to set for "root=" in /etc/ssmtp/ssmtp.conf|
 |Y_SSMTP_MAILHUB | | value to set for "mailhub=" in /etc/ssmtp/ssmtp.conf|
 |Y_SSMTP_HOSTNAME | | value to set for "hostname=" in /etc/ssmtp/ssmtp.conf|
@@ -387,6 +408,8 @@ These are the environment variables and their descriptions.
 |Y_RSYNCD_SYSVOL_SERVER | | {IP Address/Hostname} IP of the server containing the sysvol to pull|
 |Y_RSYNCD_SYSVOL_CRON | | cron time expression used to pull the sysvol (unidirectional SysVol replication) <br> e.g. */5 * * * *|
 |Y_RSYNCD_SYSVOL_UPON_JOIN | | {yes/no} yes, to run a rsync command (pull sysvol and idmap) upon joining the domain|
+|Y_CHRONYD_ADJTIMEX | no | {yes/no} yes, to enable the control of the system clock|
+|Y_CHRONYD_OPTION | | options to append in /etc/chrony/chrony.conf <br> e.g. Y_CHRONYD_OPTION="bindcmdaddress 10.1.192.11 \| allow 10.1.192.0/24 \| server 0.pool.ntp.org iburst \| server 1.pool.ntp.org iburst"|
 |Y_HOSTS_ENTRY | | entries to put in /etc/hosts <br> e.g. Y_HOSTS_ENTRY="127.0.0.1 localhost \| ::1 ip6-localhost ip6-loopback \| 10.1.192.11  dc1.samba.lan dc1"|
 |Y_RESOLV_OPTION | | options to put in /etc/resolv.conf <br> e.g. Y_RESOLV_OPTION="search samba.lan \| nameserver 10.1.192.11"|
 |Y_IDMAP_LOWERBOUND | | value to set for "lowerBound:" in /usr/share/samba/setup/idmap_init.ldif|
@@ -428,15 +451,13 @@ These are the environment variables and their descriptions.
 
 | Name | Version |
 | :- |:- |
-|ye3samba | 1.0.0 |
-|samba | 4.17.12-Debian |
-|debian | 12.11 |
+|ye3samba | 2.0.0 |
+|samba | 4.22.3-Debian |
+|debian | 13.0 |
 
 ## Changelog
 
-### [1.0.0] - 2025-07-28
-#### Added
-- première : first release
+[https://gitlab.com/palw3ey/ye3samba/-/blob/main/CHANGELOG.md](https://gitlab.com/palw3ey/ye3samba/-/blob/main/CHANGELOG.md)
 
 ## ToDo
 
@@ -448,5 +469,5 @@ GPLv3
 author: palw3ey  
 maintainer: palw3ey  
 email: palw3ey@gmail.com  
-website: https://gitlab.com/palw3ey/ye3samba  
-docker hub: https://hub.docker.com/r/palw3ey/ye3samba
+GitHub: https://github.com/palw3ey/ye3samba  
+GitLab: https://gitlab.com/palw3ey/ye3samba
